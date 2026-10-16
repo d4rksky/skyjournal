@@ -4,6 +4,7 @@ export type TradeSideId = 'buy' | 'sell' | 'unknown'
 export type TradeResultId = 'profit' | 'loss' | 'risk_free'
 
 export type ParsedFolderName = {
+  tradeIndex: number | null
   reward: string
   result: TradeResultId
   side: TradeSideId | null
@@ -13,6 +14,7 @@ export type ParsedFolderName = {
 export type PhotoImportFolderPreview = {
   folderName: string
   folderPath: string
+  tradeIndex: number | null
   reward: string | null
   result: TradeResultId | null
   side: TradeSideId | null
@@ -71,75 +73,87 @@ const mapSide = (raw: string): TradeSideId | null => {
   return SIDE_ALIASES[raw.trim()] ?? null
 }
 
+const emptyParse = (error: string, partial?: Partial<ParsedFolderName>): ParsedFolderName => ({
+  tradeIndex: partial?.tradeIndex ?? null,
+  reward: partial?.reward ?? '',
+  result: partial?.result ?? 'risk_free',
+  side: partial?.side ?? null,
+  error
+})
+
 /**
  * Parse a trade subfolder name.
- * Format: `reward` or `reward|side` (fields separated by `|`).
- * Examples: `-1|buy`, `+3|sell`, `2`, `-1.5|خرید`
+ * Format: `index.reward` or `index.reward.side`
+ * Examples: `1.+3`, `2.3.sell`, `3.-1`, `4.-0.5.buy`
  */
 export const parseTradeFolderName = (folderName: string): ParsedFolderName => {
   const trimmed = folderName.trim()
   if (!trimmed) {
-    return {
-      reward: '',
-      result: 'risk_free',
-      side: null,
-      error: 'نام پوشه خالی است.'
-    }
+    return emptyParse('نام پوشه خالی است.')
   }
 
-  const parts = trimmed.split('|').map((part) => part.trim())
-  if (parts.length > 2) {
-    return {
-      reward: '',
-      result: 'risk_free',
-      side: null,
-      error: 'نام پوشه باید حداکثر دو بخش داشته باشد (ریوارد|نوع معامله).'
-    }
-  }
-
-  const rewardRaw = parts[0] ?? ''
-  const match = /^([+-]?)(\d+(?:\.\d+)?)$/.exec(rewardRaw)
+  const match = /^(\d+)\.([+-]?\d+(?:\.\d+)?)(?:\.(.+))?$/.exec(trimmed)
   if (!match) {
-    return {
-      reward: '',
-      result: 'risk_free',
-      side: null,
-      error: `ریوارد در نام پوشه نامعتبر است: «${rewardRaw}». مثال‌ها: -1|+3|2`
-    }
+    return emptyParse('نام پوشه باید به شکل شماره.ریوارد باشد. مثال: 1.+3 یا 1.+3.buy')
   }
 
-  const signed = Number(`${match[1]}${match[2]}`)
+  const tradeIndex = Number(match[1])
+  if (!Number.isInteger(tradeIndex) || tradeIndex < 1) {
+    return emptyParse('شماره معامله باید عدد صحیح بزرگ‌تر از صفر باشد.')
+  }
+
+  const rewardRaw = match[2] ?? ''
+  const signed = Number(rewardRaw)
   if (!Number.isFinite(signed)) {
-    return {
-      reward: '',
-      result: 'risk_free',
-      side: null,
-      error: `ریوارد در نام پوشه نامعتبر است: «${rewardRaw}».`
-    }
+    return emptyParse(`ریوارد در نام پوشه نامعتبر است: «${rewardRaw}».`, { tradeIndex })
   }
 
-  const absolute = Math.abs(signed)
-  const reward = formatRewardMagnitude(absolute)
-
-  let result: TradeResultId
-  if (signed < 0) result = 'loss'
-  else if (signed > 0) result = 'profit'
-  else result = 'risk_free'
-
-  let side: TradeSideId | null = null
-  if (parts.length === 2 && parts[1]) {
-    side = mapSide(parts[1])
-    if (!side) {
-      return {
-        reward,
-        result,
-        side: null,
-        error: `نوع معامله نامعتبر است: «${parts[1]}». مقادیر مجاز: buy/sell یا خرید/فروش.`
-      }
-    }
+  const reward = formatRewardMagnitude(Math.abs(signed))
+  const result: TradeResultId = signed < 0 ? 'loss' : signed > 0 ? 'profit' : 'risk_free'
+  const sideRaw = (match[3] ?? '').trim()
+  if (!sideRaw) {
+    return { tradeIndex, reward, result, side: null, error: null }
   }
 
-  return { reward, result, side, error: null }
+  const side = mapSide(sideRaw)
+  if (side !== 'buy' && side !== 'sell') {
+    return emptyParse(`نوع معامله نامعتبر است: «${sideRaw}». مقادیر مجاز: buy یا sell.`, {
+      tradeIndex,
+      reward,
+      result
+    })
+  }
+
+  return { tradeIndex, reward, result, side, error: null }
+}
+
+export const compareTradeFolders = (
+  a: { tradeIndex: number | null; folderName: string },
+  b: { tradeIndex: number | null; folderName: string }
+): number => {
+  if (a.tradeIndex != null && b.tradeIndex != null && a.tradeIndex !== b.tradeIndex) {
+    return a.tradeIndex - b.tradeIndex
+  }
+  if (a.tradeIndex != null && b.tradeIndex == null) return -1
+  if (a.tradeIndex == null && b.tradeIndex != null) return 1
+  return a.folderName.localeCompare(b.folderName, undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  })
+}
+
+export const markDuplicateTradeIndexes = (folders: PhotoImportFolderPreview[]): void => {
+  const counts = new Map<number, number>()
+  for (const folder of folders) {
+    if (folder.error || folder.tradeIndex == null) continue
+    counts.set(folder.tradeIndex, (counts.get(folder.tradeIndex) ?? 0) + 1)
+  }
+
+  for (const folder of folders) {
+    if (folder.error || folder.tradeIndex == null) continue
+    if ((counts.get(folder.tradeIndex) ?? 0) < 2) continue
+    folder.error = `شماره معامله ${folder.tradeIndex.toLocaleString('fa-IR')} تکراری است.`
+  }
 }
 
 export const resultLabelFa = (result: TradeResultId | null): string => {

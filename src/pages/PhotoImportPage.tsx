@@ -238,11 +238,35 @@ export const PhotoImportPage = ({
             درون‌ریزی با عکس
           </h1>
           <p className="mt-1 text-sm text-muted">
-            هر زیرپوشه یک معامله است. نام پوشه: ریوارد یا ریوارد|نوع (مثل{' '}
+            هر زیرپوشه یک معامله است. نام پوشه به شکل شماره.ریوارد نوشته می‌شود، مثل{' '}
             <span className="font-mono text-ink" dir="ltr">
-              -1|buy
+              1.+3
             </span>
-            ).
+            . ریوارد می‌تواند{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              +3
+            </span>
+            ،{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              3
+            </span>
+            ،{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              -1
+            </span>{' '}
+            یا{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              -0.5
+            </span>{' '}
+            باشد. اگر نوع معامله مشخص است،{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              .buy
+            </span>{' '}
+            یا{' '}
+            <span className="font-mono text-ink" dir="ltr">
+              .sell
+            </span>{' '}
+            را به آخر نام اضافه کنید؛ در غیر این صورت نوع معامله خالی می‌ماند.
           </p>
         </div>
       </div>
@@ -449,6 +473,7 @@ export const PhotoImportPage = ({
               <table className="w-full min-w-[640px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-line text-muted">
+                    <th className="px-2 py-2 text-right font-medium">شماره</th>
                     <th className="px-2 py-2 text-right font-medium">نام پوشه</th>
                     <th className="px-2 py-2 text-right font-medium">ریوارد</th>
                     <th className="px-2 py-2 text-right font-medium">نتیجه</th>
@@ -466,6 +491,11 @@ export const PhotoImportPage = ({
                         folder.error && 'bg-red-50/60 dark:bg-danger/10'
                       )}
                     >
+                      <td className="px-2 py-2 text-ink">
+                        {folder.tradeIndex == null
+                          ? '—'
+                          : folder.tradeIndex.toLocaleString('fa-IR')}
+                      </td>
                       <td className="px-2 py-2 font-mono text-ink" dir="ltr">
                         {folder.folderName}
                       </td>

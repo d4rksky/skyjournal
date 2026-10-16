@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { basename, extname, join } from 'path'
 import type { FieldDefinition, JournalImageInput, Strategy } from '../../src/lib/types'
 import {
+  compareTradeFolders,
+  markDuplicateTradeIndexes,
   parseTradeFolderName,
   type PhotoImportFolderPreview,
   type PhotoImportResult,
@@ -121,6 +123,7 @@ const previewFolder = (folderPath: string): PhotoImportFolderPreview => {
     return {
       folderName,
       folderPath,
+      tradeIndex: parsed.tradeIndex,
       reward: parsed.error ? null : parsed.reward,
       result: parsed.error ? null : parsed.result,
       side: parsed.error ? null : parsed.side,
@@ -133,6 +136,7 @@ const previewFolder = (folderPath: string): PhotoImportFolderPreview => {
   return {
     folderName,
     folderPath,
+    tradeIndex: parsed.tradeIndex,
     reward: parsed.error ? null : parsed.reward,
     result: parsed.error ? null : parsed.result,
     side: parsed.error ? null : parsed.side,
@@ -185,9 +189,8 @@ export const scanPhotoImportDirectory = (rootPath: string): PhotoImportScanResul
     folders.push(previewFolder(full))
   }
 
-  folders.sort((a, b) =>
-    a.folderName.localeCompare(b.folderName, undefined, { numeric: true, sensitivity: 'base' })
-  )
+  markDuplicateTradeIndexes(folders)
+  folders.sort(compareTradeFolders)
 
   return { rootPath: trimmed, folders }
 }
@@ -225,8 +228,33 @@ export const importTradesFromPhotoFolders = (
     errors: []
   }
 
-  for (const folderPath of input.folderPaths) {
+  const indexed = input.folderPaths.map((folderPath) => {
     const folderName = basename(folderPath)
+    return {
+      folderPath,
+      folderName,
+      parsed: parseTradeFolderName(folderName)
+    }
+  })
+
+  const indexCounts = new Map<number, number>()
+  for (const item of indexed) {
+    if (item.parsed.error || item.parsed.tradeIndex == null) continue
+    indexCounts.set(item.parsed.tradeIndex, (indexCounts.get(item.parsed.tradeIndex) ?? 0) + 1)
+  }
+
+  const ordered = [...indexed].sort((a, b) =>
+    compareTradeFolders(
+      { tradeIndex: a.parsed.tradeIndex, folderName: a.folderName },
+      { tradeIndex: b.parsed.tradeIndex, folderName: b.folderName }
+    )
+  )
+
+  const createdAtBase = Date.now()
+  let createdCount = 0
+
+  for (const item of ordered) {
+    const { folderPath, folderName, parsed } = item
     try {
       if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
         result.skipped += 1
@@ -237,10 +265,18 @@ export const importTradesFromPhotoFolders = (
         continue
       }
 
-      const parsed = parseTradeFolderName(folderName)
       if (parsed.error) {
         result.skipped += 1
         result.errors.push({ folderName, message: parsed.error })
+        continue
+      }
+
+      if (parsed.tradeIndex != null && (indexCounts.get(parsed.tradeIndex) ?? 0) > 1) {
+        result.skipped += 1
+        result.errors.push({
+          folderName,
+          message: `شماره معامله ${parsed.tradeIndex.toLocaleString('fa-IR')} تکراری است.`
+        })
         continue
       }
 
@@ -248,13 +284,17 @@ export const importTradesFromPhotoFolders = (
       const images = loadImagesAsInputs(imagePaths)
       const values = buildJournalValues(strategy, input, parsed)
 
-      createJournal({
-        accountId: input.accountId,
-        strategyId: input.strategyId,
-        values,
-        riskFixed: Boolean(input.riskFixed),
-        images
-      })
+      createJournal(
+        {
+          accountId: input.accountId,
+          strategyId: input.strategyId,
+          values,
+          riskFixed: Boolean(input.riskFixed),
+          images
+        },
+        new Date(createdAtBase + createdCount).toISOString()
+      )
+      createdCount += 1
       result.imported += 1
     } catch (error) {
       result.skipped += 1

@@ -667,10 +667,11 @@ const listJournalsForBalance = (accountId: string): Journal[] => {
   }))
 }
 
-export const createJournal = (input: JournalInput): Journal => {
+export const createJournal = (input: JournalInput, createdAt?: string): Journal => {
   const validated = validateJournalInput(input)
   const id = crypto.randomUUID()
-  const ts = nowIso()
+  const ts =
+    createdAt && !Number.isNaN(Date.parse(createdAt)) ? new Date(createdAt).toISOString() : nowIso()
 
   const createTx = db.transaction(() => {
     db.prepare(

@@ -1,6 +1,6 @@
 {
   "name": "skyjournal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SkyJournal desktop app",
   "main": "./out/main/index.js",
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "dist:win": "electron-vite build && electron-builder --win --x64",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^3.0.0",
     "tailwindcss": "^4.0.9",
     "typescript": "^5.7.3",
@@ -44,17 +46,36 @@
     "appId": "com.skyjournal.app",
     "productName": "SkyJournal",
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "dist"
     },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
     "extraResources": [
       {
         "from": "resources/",
         "to": ".",
-        "filter": ["icon.png", "icon.ico"]
+        "filter": [
+          "icon.png",
+          "icon.ico"
+        ]
       }
     ],
     "win": {
-      "icon": "icon.ico"
+      "icon": "icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
       "icon": "icon.png"
